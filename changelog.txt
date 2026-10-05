@@ -1,0 +1,279 @@
+#%% Changelog
+# Entries in reverse chronological order
+# Was in a py file previously.
+# Dates are MM/DD/YY
+# A line beginning with '##' denotes console activity
+# A line beginning with '## >>' denotes a console command
+# A line beginning with '#|' denotes assembly code
+
+#%% V2.0 (03/26/26)
+# Added set_pixel and get_pixel to the BitBLT
+# Fixed a few bugs (DEC was incrementing, LDIR was buggy)
+# 'Hardware' is finalized for the contest (unless I find more bugs)
+
+#%% V1.21 (03/25/26)
+# Added keyboard & mouse input
+# The computer is basically done, just touching up things
+# Also fixing bugs, and documenting the hardware
+# Making some assembly files for DX
+# Documented all ports and added definitions
+# Fixed local scope in the compiler, added .scope command
+# Now any var-creating directive changes the global domain
+# Unless the var name is prefixed with '.',
+#   In which case it becomes: global_domain + var;
+#   The '.' is replaced with an '_'
+
+#%% V1.20 (03/23/26)
+# Continued implementing the screen
+# Handled VBLANKs every 60 Hz
+# Made a string printing routine
+# The Computer is Now Functional!
+# All that remains is to fix any leftover bugs, tweak things, and...
+#    Code in assembly (:
+
+#%% V1.19 (03/21/26)
+# Started work on the screen using pygame
+
+#%% V1.18 (03/19/26)
+# Almost done V1!
+# Did more bugfixing with Gemini
+# Speed tests show 1 Ghz for a HALT state
+# Around 150 kHz for a CALL/RET/JR loop.
+# Those are the slowest instructions
+# (Excepting Interrupt stuff like RETI and TRAP)
+
+#%% V1.17 (03/18/26)
+# Created a way for devices to raise IRQ lines, handled through the Ports class
+# The basic framework ('hardware') is complete!
+# All that remains is to add/edit the ports, and write assembly code!
+# Thus, I will first go bug searching.
+# Gemini found many bugs, which I fixed.
+# Completely refactored the MMIO - shrank to 0xFFxx (256 bytes)
+# Merged SYSOUT and OUT etc.
+# Placed port security checks in Ports instead of in Mem.
+# Ran some speed tests
+
+#%% V1.16 (03/17/26)
+# Removed SecurityFault in favor of setting a cpu.pending_fault flag
+# Yay, closer to the course scope now! (:
+# Completely refactored CPU to check for faults after each mem access,
+#    it also actually handles faults now!
+# Next up is probably hardware interrupts (IRQs)
+
+#%% V1.15 (03/16/26)
+# Created a .header directive in the compiler, which
+#   shunts the current data to a second list, header.
+# Created the default OS header in os_header.txt
+# Planning for interrupts is near fruition, RETI and TRAP not tested yet
+# Updated bios.txt to read the header first, then load the OS
+# Replaced STOP opcode with a sysport call (SYSOUT (0x00) 0xFF)
+# Created a primitve DMA to replace the INRZ loop in the BIOS
+
+#%% V1.14 (03/13/26)
+# Created a default port contract:
+# [r: STATUS, w: COMMAND] [DATA STREAM] [ARG LOW] [ARG HIGH]
+# On error, STATUS[7] is set, and ARG LOW and ARG HIGH contain the code
+# Implemented this by creating a wrapper interface, in port_interface.
+# Formatted DiskPort to use the new standard.
+# Updated bios.txt to support the new DiskPort.
+
+#%% V1.13 (03/12/26)
+# Replaced kernel_mode boolean with _level
+# Level 0: Handling FAULT
+# Level 1: Handling IRQ
+# Level 2: In OS/SYSCALL
+# Level 3: In user area
+
+#%% V1.12 (03/11/26)
+# With Gemini providing regex and eval code snippets (they're in utils),
+# I overhauled the compiler to support math expressions.
+# Also it's faster now.
+# Started implementing RETI
+
+#%% V1.11 (03/06/26)
+# Added OUT and IN instructions, as well as RRA and RLA
+# Fixed bugs such as JP mn being executed as JP hl
+# Added SYSIN, SYSOUT, SYSTST, TSTIO
+# Latest version of birthday program, with same result:
+
+# --- birthday.txt ---
+#| LD hl text
+#| LD de 0xF100
+#| LD bc 0x1000
+#| OTRZ
+#| OUT (0x00) newline
+#| OUT (0x00) 0x00
+#| 
+#| STOP
+#| DEF newline 0x0A
+#| DATA text "HAPPY BIRTHDAY, MOM!" 0
+
+
+#%% V1.10 (03/05/26)
+# Created the SysDisk port via a general DiskPort class.
+# Created a BIOS that loads the OS from file.
+
+#%% V1.9 (03/04/26)
+# Added vram access methods to memory.py
+# Asked Gemini to critique CPU.py
+# Took Gemini's suggestion that INC, DEC, and DJNZ should not touch the carry flag.
+# Also took Gemini's advice that DJNZ should not affect the zero flag either.
+# Tested the BIOS shadow, it works!
+
+#%% V1.8 (03/03/26)
+# Created exceptions.py, with SecurityFault as the only one so far.
+# Updated memory.py to throw a SecurityFault if attempting illegal access
+
+#%% V1.7 (03/02/26)
+# Decided to reserve ports 0xF0xx for system calls (kernel access only)
+# Decided to reserve ports 0xF1xx for default user I/O ports
+# STOP command removed in favor of using a system port.
+# Added all JR, JP, CALL, RET with and without conditions.
+# Added JP hl as well.
+# Added all AND, OR, XOR, and CP instructions.
+# Added PUSH, POP instructions.
+# Added LD (hl), bc/de and vice versa.
+#
+# Pointed Gemini at ports.py and asked it to write the eject_extension method
+# Then adjusted it to fit the course scope a bit more.
+
+#%% V1.6 (02/27/26)
+# Continued rewriting code.
+# Updated the console out port to accept console input as well.
+# Started using Gemini as a 'Rubber Duck' to bounce ideas off of.
+# Gemini offhandedly mentioned np.uint8 and I crashed out as I did not know of this.
+# I rewrote all my memory to use unsigned ints.
+#
+# Fixed JR and DJNZ to be standard; i.e. jump relative to the pc after the instruction.
+# Thus JR -1 runs an 0xFF (CP a h) instruction, JR -2 will soft-lock the computer,
+# And JR 0 will do nothing.
+
+#%% V1.5 (02/26/26)
+# Decided to start using things from out of the course scope for ease of programming.
+# Also started following PEP8 guidelines
+# Rewrote large sections of code to follow the PEP8 guidelines, more to do still.
+# Also started using Gemini for formatting assistance (PEP8)
+
+#%% V1.4 (02/25/26)
+# Added JR and JP commands
+# Updated DJNZ to be relative
+# Updated Compiler to turn absolute locations into relative offset for JR and DJNZ; throws error if too far.
+# JR -1 and DJNZ -1 do nothing, lest they be capable of soft-locking the computer
+# JR +1 and DJNZ +1 also do nothing, as it's the same effect as if they didn't trigger.
+# JR +0 and DJNZ +0 cause a NOP instruction, as they jump to the 0x00 byte.
+# For relative jumps, bytes are treated as signed (-128 to 127) so that backwards jumps are possible.
+# Important note: jumps are relative FROM THE BYTE WITH THE JUMP DISTANCE; i.e. the 0x05 in JR 0x05.
+# So 0x7005010203040506070809 will jump to the byte marked 05;
+#   From ^^   to   ^^
+# This is partly to balance the fact that the max backwards jump (-128) is larger than the max forwards jump (127)
+
+#%% V1.3 (02/24/26)
+# Completely changed my standards for memory storage.
+# Renamed functions in utils package: toByte, toShort, fromByte, fromShort -> signByte, signShort, unsignByte, unsignShort
+# Decided to use signed bytes and shorts only for data storage.
+# Now on reading, immediately unsign; sign the byte only on writing.
+# This is much more convenient and easier to read.
+#
+# ComputerMemory now accepts and returns unsigned bytes as well.
+# Ports also uses only unsigned bytes.
+#
+# Added registration to Ports, which registers itself as a search function on init.
+# Further explanation of this process can be found in ports.py
+#
+# Added a console out port that registers on boot under id 0x10.
+#
+# Added STOP command
+#
+# Updated program:
+
+# --- birthday.txt ---
+#| LD a 0x10        // The id of the console out port
+#| LD hl 0xF000     // Ports start location
+#| LD (hl) a        // Set filter to 0x10
+#| INC hl           // Load port location
+#| LD e (hl)        // From 0xF001-0xF002
+#| INC hl           // Into register de
+#| LD d (hl)        // (Little-Endian)
+#| LD hl portloc    // Populate loop
+#| INC hl           // With correct port
+#| LD (hl) e        // So it can print
+#| INC hl           // The string.
+#| LD (hl) d
+#| 
+#| LD hl text       // Then start the print program as before.
+#| LBL loop
+#| 
+#| LD a (hl)
+#| INC hl
+#| LBL portloc      // Used to populate the LD instruction with the port.
+#| LD (0xF000) a    // Set to 0xF000 initially to avoid unexpected crashes.
+#| INC a
+#| LD c a
+#| DJNZ loop
+#| STOP             // New command; stops execution so the string isn't executed as bytecode.
+#| DATA text "HAPPY BIRTHDAY, MOM!" 0
+
+## >> compile birthday.txt
+## >> run
+## HAPPY BIRTHDAY, MOM!
+
+#%% V1.2 (02/23/26)
+# Added compiler support for 'DATA' command, which allows placing raw bytes or a string into memory, placing the pointer into a var.
+# Updated compiler to support 'LD rr, mn' command
+# Updated 'Happy Birthday' program to use a DATA string.
+# Updated compiler to support all 'INC'/'DEC' commands
+# Updated compiler to support all ADC, SBC, ADD, SUB, EX, NOP, MLT
+# Added DJNZ to both CPU and Compiler.
+# Created a 'Print' program:
+
+# --- birthday.txt ---
+#| LD hl text
+#| 
+#| LBL loop
+#| 
+#| LD a (hl)        // Load (hl) into (0xF205)
+#| LD (0xF205) a    // and increment. This prints the string
+#| INC hl           // one character at a time
+#| INC a            // Simple check for a==0
+#| LD c a           // DJNZ decrements c and checks
+#| DJNZ loop        // if c == 0x00; i.e. end of string.
+#| 
+#| DATA text "HAPPY BIRTHDAY, MOM!" 0 // string quotes add an 0x00 byte to the end of DATA.
+
+LD hl text
+LBL loop
+LD a (hl)
+LD (0xF205) a
+INC hl
+INC a
+LD c a
+DJNZ loop
+DATA text "HAPPY BIRTHDAY, MOM!" 0
+
+## >> compile birthday.txt
+## >> run 0 16
+## HAPPY BIRTHDAY, MOM!
+
+#%% V1.1 (02/20/26)
+# Added EX, INC, DEC, ADD, SUB, ADC, SBC, MUL instructions
+# Loading is now automatic on boot.
+# Assembly Compiler working for LD commands, supports vars and locs with 'DEF' and 'LBL'
+# Updated 'Happy Birthday' program to use said vars and locs.
+
+#%% V1.0 (before 02/20/26)
+# LD instructions working
+# Console working
+# Set print port to 0xF205
+# Persistent memory via save and load commands
+# Manually wrote bytecode:
+
+## >> write 0 0x77F2670507480741075007500759070007420749075207540748074407410759072C0700074D074F074D0721
+## >> save
+
+## >> load
+## >> read 0 44
+## 77F2670507480741075007500759070007420749075207540748074407410759072C0700074D074F074D0721
+## >> run 0 44
+## HAPPY BIRTHDAY, MOM!
+
+# :)
