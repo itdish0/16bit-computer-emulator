@@ -1,0 +1,240 @@
+.inc os_header.txt
+.inc graphics_lib_core.txt
+.inc port_constants.txt
+.def console, 0xFFF0
+
+.lbl _kernel_entry
+; BIOS set up the screen window for us already
+
+EI
+
+CALL bit_blt_wait
+CALL wait_vblank
+OUT (port_blit), cmd_blit_show
+OUT (port_scr), cmd_scr_blit_win
+OUT (port_scr), cmd_scr_show
+
+OUT (port_blit + reg.argl), 0xF8
+OUT (port_blit + reg.argh), 0x00
+OUT (port_blit), cmd_blit.set_trans_clr
+
+LD c, 0
+CALL fill_screen
+
+LD hl, text
+LD de, 0x2020
+LD bc, 0x2820
+CALL print_str
+
+
+.lbl loop
+    CALL wait_vblank
+    OUT (port_blit), cmd_blit_show
+    OUT (port_scr), cmd_scr_blit_win
+    OUT (port_scr), cmd_scr_show
+    CALL cycle_palette
+    JR loop
+
+STOP
+
+.def newline, 0x0A
+.str text, "Happy Birthday, Mom!"
+
+.short vblank_counter, 0x0000
+
+.byte bit_blt_done, 0
+
+.lbl _segfault_handler
+.lbl _stack_overflow_handler
+.lbl _illop_handler
+.lbl _inv_syscall_handler
+STOP
+.lbl _tick_handler
+.lbl _dma_complete_handler
+.lbl _disk_irq_handler
+RETI
+
+
+.lbl _bitblt_complete_handler
+    PUSH hl
+    LD hl, bit_blt_done
+    LD (hl), 1
+    POP hl
+    RETI
+
+.lbl _vblank_handler
+    PUSH hl
+    LD hl, vblank_counter
+    INC (hl)
+    JR nc, .skip
+        INC hl
+        INC (hl)
+    .lbl .skip
+    POP hl
+    RETI
+
+.lbl halt_bit_blt
+    LD hl, bit_blt_done
+    LD (hl), 0
+    XOR a, a
+    .lbl .wait
+        HALT
+        OR a, (hl)
+        JR z, .wait
+    RET
+
+.lbl fill_screen
+    OUT (port_blit + reg.argl), 0
+    OUT (port_blit + reg.argh), 0
+    OUT (port_blit), cmd_blit_pos
+    OUT (port_blit + reg.argl), 0  ; Max size: 256
+    OUT (port_blit + reg.argh), 192
+    OUT (port_blit), cmd_blit_size
+    LD a, c
+    OUT (port_blit + reg.argl), a
+    OUT (port_blit + reg.argh), 0
+    OUT (port_blit), cmd_blit_set_color
+    CALL bit_blt_wait
+    OUT (port_blit), cmd_blit_fill_buf
+    JP halt_bit_blt
+
+.lbl wait_vblank
+    LD hl, vblank_counter
+    LD de, (hl)
+    OR a,a
+    .lbl .loop
+    HALT
+    LD bc, (hl)
+    EX hl, bc
+    SBC hl, de
+    EX hl, bc
+    JR z, .loop
+    RET
+
+
+.lbl cycle_palette
+
+    LD hl, cycling_palette + 2
+    LD b, (hl)
+    INC hl
+    LD c, (hl)
+    PUSH bc
+    LD d, h
+    LD e, l
+    DEC de
+    INC hl
+    LD bc, 372
+    LDIR
+    
+    POP bc
+    DEC hl
+    LD (hl), c
+    DEC hl
+    LD (hl), b
+    
+    OUT (port_blit + reg_argl), 0
+    OUT (port_blit + reg_argh), 0
+    OUT (port_blit), cmd_blit_pos
+    OUT (port_blit), cmd_blit_size
+
+    OUT (port_blit + reg_argl), cycling_palette & 0xFF
+    OUT (port_blit + reg_argh), cycling_palette >> 8
+    OUT (port_blit), cmd_blit_loc
+    
+    CALL bit_blt_wait
+    OUT (port_blit), cmd_blit_set_pal
+    RET
+
+.align 256
+.lbl _sp_min
+.ds 0x100
+.lbl _sp_start
+.align 256
+.lbl _kernel_end
+.ds 0x200
+
+.inc cycling_palette.txt
+.inc font.txt
+
+.ds char_buffer, 64
+
+
+.lbl get_char_bmp   ; char a, color c
+    ld de, ascii_font
+    ld h, 0x00
+    ld l, a
+    OR a, a
+    ADC hl, hl
+    ADC hl, hl
+    ADC hl, hl
+    ADC hl, de
+    LD de, char_buffer
+    ; Get byte, unroll
+    LD b, 8
+.lbl line
+    LD a, (hl)
+    EX hl, de
+    PUSH bc
+    LD b, 8
+    .lbl unroll
+        RLA
+        JR nc, ur_skip
+            LD (hl), c
+            JP ur_done
+        .lbl ur_skip
+            LD (hl), 0x00
+        .lbl ur_done
+            INC hl
+            DJNZ unroll
+    POP bc
+    EX hl, de
+    INC hl
+    DJNZ line
+RET
+
+.lbl print_str   ; x,y d,e; str_ptr hl; color c; left lim b
+                 ; modified in mysterious ways... (:
+.lbl .ps_loop
+    .lbl .get_char
+        LD a, (hl)
+        OR a, a
+        RET z
+        INC hl
+        CP a, 0x0A
+        JR z, .carriage_return
+    .lbl .get_font_bmp
+        PUSH hl
+        PUSH de
+        INC c
+        PUSH bc
+        CALL get_char_bmp
+        POP bc
+        POP de
+    .lbl .bit_blt
+        CALL bit_blt_wait
+        OUT (port_blit + reg_argl), char_buffer & 0xFF
+        OUT (port_blit + reg_argh), char_buffer >> 8
+        OUT (port_blit), cmd_blit_loc
+        LD hl, port_blit + reg_argl
+        LD (hl), de
+        OUT (port_blit), cmd_blit_pos
+        OUT (port_blit + reg_argl), 0x08
+        OUT (port_blit + reg_argh), 0x08
+        OUT (port_blit), cmd_blit_size
+        OUT (port_blit), cmd_blit_write_buf
+    .lbl .update_cursor
+        POP hl
+        LD a, e
+        ADD a, 0x06
+        LD e, a
+        JR nc, .ps_loop
+        .lbl .carriage_return
+            LD e, b
+            LD a, d
+            ADD a, 8
+            LD d, a
+    RET
+
+
+.align 256
+.lbl _lib_end

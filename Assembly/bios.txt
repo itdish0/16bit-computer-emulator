@@ -1,0 +1,354 @@
+JP bios_start
+.inc port_constants.txt
+.def console, 0xFFF0
+.org 0x0008
+
+; handlers for IRQs
+.short irq_ignore
+.short dma_handler
+.short irq_ignore
+.short vblank_handler
+.short irq_ignore
+
+.org 0x0100
+.lbl bios_start
+
+OUT (port_dmac), cmd_rst
+OUT (port_blit), cmd_rst
+OUT (port_scr), cmd_rst
+OUT (port_input), cmd_rst
+
+; Create initial window (0) at max size
+OUT (port_scr + reg_argl), 0
+OUT (port_scr + reg_argh), 0
+OUT (port_scr), cmd_scr_new_win
+IN a, (port_scr + reg_argl)
+OUT (port_scr), cmd_scr_sel_win
+OUT (port_scr), cmd_scr_set_blit_handle
+
+; Setup default palette
+OUT (port_blit + reg_argh), 0
+OUT (port_blit), cmd_blit_pos
+OUT (port_blit), cmd_blit_size
+
+OUT (port_blit + reg_argl), default_palette & 0xFF
+OUT (port_blit + reg_argh), default_palette >> 8
+
+OUT (port_blit), cmd_blit_loc
+OUT (port_blit), cmd_blit_set_pal
+
+CALL bit_blt_wait
+
+OUT (port_sys_disk), cmd_disk_name
+
+    JR skip_choice
+
+LD hl, search_pattern
+LD c, port_sys_disk + reg_data
+LD b, 0x00
+OTRZ
+OUT (port_sys_disk + reg_data), 0x00
+OUT (port_sys_disk), cmd_disk_search
+LD hl, (port_sys_disk + reg_argl)
+
+LD a, h
+OR a, l
+JR z, end_print
+
+LD de, 0x0000
+
+.lbl print_entries
+    DEC hl
+    LD (port_sys_disk + reg_argl), hl
+    OUT (port_sys_disk), cmd_disk_rseek
+    PUSH hl
+    PUSH de
+
+    LD hl, text_buffer
+    LD b, 0x00
+    LD c, port_sys_disk + reg_data
+    INRZ
+
+    LD hl, text_buffer
+    LD b, 0x00
+    LD c, console
+    OTRZ
+    OUT (console), newline
+    OUT (console), 0x00
+    
+    POP de
+    LD hl, text_buffer
+    LD bc, 0x00FF
+    CALL print_str
+    LD e, b
+    LD a, d
+    ADD a, 8
+    LD d, a
+
+    POP hl
+    LD a, h
+    OR a, l
+    JR nz, print_entries
+
+.lbl end_print
+
+CALL bit_blt_wait
+
+OUT (port_blit), 6
+OUT (port_scr), 4
+OUT (port_scr), 5
+
+LD hl, prompt
+LD b, 0x00
+LD c, console
+OTRZ
+OUT (console), 0x00
+
+;OUT (console + reg_data), 0x01
+
+;LD hl, text_buffer
+;LD b, 0x00
+;LD c, console + reg_data
+;INRZ
+
+CALL get_input
+
+.lbl skip_choice
+
+LD hl, boot_msg
+LD b, 0x00
+LD c, console
+OTRZ
+OUT (console), newline
+OUT (console), 0x00
+
+OUT (port_sys_disk), cmd_disk_name
+
+LD hl, text_buffer
+LD b, 0x00
+LD c, port_sys_disk + reg_data
+OTRZ
+
+OUT (port_sys_disk + reg_data), 0x00
+OUT (port_sys_disk + reg_argl), disk_mode_read
+OUT (port_sys_disk), cmd_disk_open
+
+OUT (port_sys_disk), cmd_disk_read
+
+LD hl, port_sys_disk + reg_data
+
+LD a, (hl)
+CP a, letter_o
+JR nz, magic_wrong
+LD a, (hl)
+CP a, letter_s
+JR nz, magic_wrong
+
+; Setup lib/kernel sizes
+LD a, (hl)   ; lib size
+OUT(port_sys + reg_argl), a
+LD a, (hl)   ; kernel size
+OUT(port_sys + reg_argh), a
+OUT(port_sys), cmd_sys_bios_kernel_size
+LD e, 0x00
+LD d, (hl)   ; Stack Start
+EX hl, de
+EX hl, sp   ; set sp to hl
+EX hl, de   ; restore sysport location
+LD e, 0x00
+LD d, (hl)   ; Stack Bottom Limit
+EX hl, de
+STKLIM
+EX hl, de   ; restore sysport location
+
+; Prepare for unshadow
+LD a, (hl)
+OUT(port_sys + reg_argl), a
+LD a, (hl)
+OUT(port_sys + reg_argh), a
+
+LD de, 0x0000
+LD bc, 0x1000
+
+OUT (port_dmac + reg_argl), 0
+OUT (port_dmac + reg_argh), 0
+OUT (port_dmac), cmd_dmac_loc
+
+OUT (port_dmac + reg_argl), 0xFF
+OUT (port_dmac + reg_argh), 0xFF
+OUT (port_dmac), cmd_dmac_size
+
+OUT (port_dmac), cmd_dmac_start
+
+
+LD a, 0
+EI
+.lbl halt_loop
+HALT
+CP a, 0x02
+JR nz, halt_loop
+DI
+
+OUT (port_sys_disk), cmd_disk_close
+
+LD hl, done_message
+LD b, 0x00
+LD c, console
+OTRZ
+OUT (console), newline
+OUT (console), 0x00
+
+LD hl, 0x0000
+LD bc, 0x0000
+LD de, 0x0000
+XOR a, a
+
+; Unshadow
+OUT(port_sys), cmd_sys_bios_unshadow
+
+STOP
+.lbl dma_handler
+LD a, 0x02
+RETI
+.lbl irq_ignore
+RETI
+
+.lbl magic_wrong
+LD hl, magic_fail
+LD b, 0x00
+LD c, console
+OTRZ
+OUT (console), a
+OUT (console), newline
+OUT (console), 0x00
+STOP
+
+.def newline, 0x0A
+.def letter_o, 0x4f
+.def letter_s, 0x53
+
+.str text_buffer, "test.os"
+
+.str done_message, "Done!"
+.str search_pattern, '*.os'
+.str prompt, 'Choose an os from the above list: '
+.str magic_fail, "Magic Number Incorrect, should be 'OS' (0x4f53): "
+.str boot_msg, "Loading..."
+
+.lbl get_char_bmp   ; char a, color c
+    ld de, ascii_font
+    ld h, 0x00
+    ld l, a
+    OR a, a
+    ADC hl, hl
+    ADC hl, hl
+    ADC hl, hl
+    ADC hl, de
+    LD de, char_buffer
+    ; Get byte, unroll
+    LD b, 8
+.lbl line
+    LD a, (hl)
+    EX hl, de
+    PUSH bc
+    LD b, 8
+    .lbl unroll
+        RLA
+        JR nc, ur_skip
+            LD (hl), c
+            JP ur_done
+        .lbl ur_skip
+            LD (hl), 0x00
+        .lbl ur_done
+            INC hl
+            DJNZ unroll
+    POP bc
+    EX hl, de
+    INC hl
+    DJNZ line
+RET
+
+.lbl print_str   ; x,y d,e; str_ptr hl; color c; left lim b
+
+.lbl ps_loop
+.lbl .get_char
+    LD a, (hl)
+    OR a, a
+    JR z, ps_end
+    INC hl
+    CP a, 0x0A
+    JR z, carriage_return
+.lbl .get_font_bmp
+    PUSH hl
+    PUSH de
+    PUSH bc
+    CALL get_char_bmp
+    POP bc
+    POP de
+.lbl .bit_blt
+    CALL bit_blt_wait
+    OUT (port_blit + reg_argl), char_buffer & 0xFF
+    OUT (port_blit + reg_argh), char_buffer >> 8
+    OUT (port_blit), cmd_blit_loc
+    LD hl, port_blit + reg_argl
+    LD (hl), de
+    OUT (port_blit), cmd_blit_pos
+    OUT (port_blit + reg_argl), 0x08
+    OUT (port_blit + reg_argh), 0x08
+    OUT (port_blit), cmd_blit_size
+    OUT (port_blit), cmd_blit_write_buf
+.lbl .update_cursor
+    POP hl
+    LD a, e
+    ADD a, 0x06
+    LD e, a
+    ;LD a, 255
+    ;CP a, e
+    JR nc, ps_end_loop
+    .lbl carriage_return
+        LD e, b
+        LD a, d
+        ADD a, 8
+        LD d, a
+.lbl ps_end_loop
+    JR ps_loop
+.lbl ps_end
+    RET
+
+.lbl get_input
+
+.lbl input_loop
+    EI
+    HALT
+    DI
+    OR a, a
+    JR z, input_loop
+    TST a, 0x80
+    JR nz, input_loop
+    ;LD a, 0x67
+    LD hl, text_buffer
+    LD (hl), a
+    INC hl
+    LD (hl), 0x00
+    DEC hl
+    LD bc, 0x00FF
+    CALL print_str
+    CALL bit_blt_wait
+    OUT (port_blit), cmd_blit_show
+    OUT (port_scr), cmd_scr_blit_win
+    OUT (port_scr), cmd_scr_show
+    JR input_loop
+RET
+
+.lbl vblank_handler
+IN a, ( port_input + reg_data)
+RETI
+
+.inc palette.txt
+.inc font.txt
+
+.inc graphics_lib_core.txt
+
+.lbl bios_end
+.def char_buffer, 0x9000
+.def .text_buffer, 0x9300

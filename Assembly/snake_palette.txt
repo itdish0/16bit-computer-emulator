@@ -1,0 +1,29 @@
+; ==========================================================
+; SNAKE PALETTE
+; format:
+;   00 CC C CCC ; constant colors
+;   01 DD 0 CCC ; const
+;   01 DD 1 CCC ; cycling
+; ==========================================================
+
+.lbl snake_palette
+.shorts 0x0000, 0xFFFF
+.shorts 0xF800, 0x07E0, 0x001F
+.shorts 0xFFE0, 0xF81F, 0x7FF
+
+.ds .0, 0x70
+
+.lbl .block
+.lbl .block_const
+.shorts 0xF800, 0x07E0, 0xFFE0, 0x001F
+.shorts 0xF81F, 0x07FF, 0x0000, 0xFFFF
+
+.lbl .block_cycle
+.shorts 0x07E0, 0x07F0, 0x07FF, 0x067F
+.shorts 0x053F, 0x0570, 0x0668, 0x0728
+
+.def .fill_size, 0x60
+.ds .fill, .fill_size
+
+.ds .2, 0x80
+.ds .3, 0x80

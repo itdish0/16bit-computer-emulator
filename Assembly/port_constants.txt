@@ -1,0 +1,253 @@
+; _______________________ Standard PortInterface ports _______________________
+; Contract:
+.scope reg
+    ; [CMD/STAT]: on read, status. bit 7 (0x80) is error. On write: command.
+    .def .data, 0x01
+    ; [DATA]: single-byte window for streaming data.
+    .def .argl, 0x02
+    ; [ARGL]: Low byte of the argument
+    .def .argh, 0x03
+    ; [ARGH]: High byte of the argument
+; Together ARGL and ARGH are a persistent 'shared scratchpad'
+; As a full 16-bit number, they are referred to as 'ARG' (0xHiLo)
+
+; Note that ARGL and ARGH return the err code and specific meta, respectively
+; (This is only when an error is pending)
+; Universal Commands:
+.scope cmd
+    .def .nop, 0x00
+    ; 0x00: NOP - do nothing
+    .def .ack_err, 0xFE
+    ; 0xFE: ACK_ERR - acknowledge the pending error
+    .def .rst, 0xFF
+    ; 0xFF: RST - complete reset of the port.
+
+; _____________________ Privileged Ports (no user access) _____________________
+
+; System Port
+.def port_sys, 0xFF00
+
+; Commands:
+.scope cmd_sys
+    .def .bios_kernel_size, 0x01
+    ;   0x01: BIOS only - setup kernel size
+    ;       Set kernel end to ARGH, lib size to ARGL (high byte only, 0xHi00)
+    .def .bios_unshadow, 0x02
+    ;   0x02: UNSHADOW (also BIOS only)
+    ;       Remove the BIOS shadow from memory, and set pc to ARG
+    .def .sandbox, 0x03
+    ;   0x03: SANDBOX - sets up the user sandbox.
+    ;       Sets base to ARGH and size to ARGL (high byte only)
+    .def .user_mode, 0x04
+    ;   0x04: USER_MODE - switches to user mode, jumping to ARG
+    ; RST:
+    ;   Stop the computer
+
+
+; -----------------------------------------------------------------------------
+; Disk Port
+.def port_sys_disk, 0xFF04
+
+; Commands:
+.scope cmd_disk
+    .def .search, 0x01
+    ;   0x01: SEARCH - search for files matching the pattern in NAME, 
+    ;       returns number of hits in ARG
+    .def .rseek, 0x02
+    ;   0x02: RSEEK - seek to next search result, populate NAME,
+    ;       start a STREAM_OUT so the computer can read the NAME.
+    .def .name, 0x03
+    ;   0x03: NAME - start a name stream through the DATA port
+    .def .open, 0x04
+    ;   0x04: OPEN - open file with the current stored name, mode in ARGL:
+    ;       0: 'rb', 1: 'rb+', 2: 'wb+', 3: 'ab'
+    .def .close, 0x05
+    ;   0x05: CLOSE - closes the currently opened file
+    .def .read, 0x06
+    ;   0x06: READ - starts a manual read stream, deprecated
+.scope disk_mode
+    ; Mode definitions for OPEN
+    .def .read, 0
+    .def .edit, 1
+    .def .new, 2
+    .def .add, 3
+
+; Status (bits):
+.scope stat_disk
+    .def .busy, 0x01
+    ;   0: BUSY - whether the disk is busy
+    .def .open, 0x02
+    ;   1: OPEN - whether there's an open file
+    ;   6: EOF - whether file pointer is at EOF - deprecated
+
+; Error Codes:
+.scope err_disk
+    .def .file, 0x01
+    ;   0x01: FILE_ERR - some kind of file-related error
+    ;       0x00: DEFAULT - something happened, don't know what
+    .def .open_busy, 0x01
+    ;       0x01: OPEN_BUSY - tried to open a file while busy
+    .def .close_busy, 0x02
+    ;       0x02: CLOSE_BUSY - tried to close a file while busy
+    ;       0x03: FNF_ERR - file not found
+    ;       0x04: DIR_ERR - file is a directory (can't open)
+    ;       0x05: PERM_ERR - lacking permissions to open the file
+    .def .critical, 0x02
+    ;   0x02: CRIT_FILE_ERR - file-related errors that should never happen
+    ;       0x00: BlockingIOError, InterruptedError
+    ;       0x01: BrokenPipeError
+    .def .search, 0x03
+    ;   0x03: SEARCH_ERR - search-related errors
+    ;       0x01: SEARCH_FAIL - search failed with exception
+    ;       0x02: SEEK_FAIL - result index out of bounds
+
+; IRQ: Technically 0x02, unused for now
+
+
+; -----------------------------------------------------------------------------
+; DMA Controller Port
+.def port_dmac, 0xFF08
+
+; Commands:
+.scope cmd_dmac
+    .def .loc, 0x01
+    ;   0x01: LOC - set the target memory location for the transfer to ARG
+    .def .size, 0x02
+    ;   0x02: SIZE - set the total number of bytes to transfer to ARG
+    .def .start, 0x03
+    ;   0x03: START - begin the DMA transfer from the disk to memory
+    .def .stop, 0x04
+    ;   0x04: STOP - halt the current DMA transfer immediately
+
+; Status (bits):
+.scope stat_dma
+    .def .active, 0x01
+    ;   0: ACTIVE - whether a DMA transfer is currently in progress
+
+; Error Codes:
+;   (None currently implemented/raised by the DMA port itself)
+
+; IRQ: Fired when the DMA transfer completes (reaches target size, EOF,
+;   or hits 0xFF00 bounds)
+
+
+; -----------------------------------------------------------------------------
+; Screen Compositor Port
+.def port_scr, 0xFF0C
+
+; Commands:
+.scope cmd_scr
+    .def .sel_win, 0x01
+    ;   0x01: SEL_WIN - selects the active hardware window using handle in ARGL.
+    .def .new_win, 0x02
+    ;   0x02: NEW_WIN - creates a new window (width=ARGL, height=ARGH). 
+    ;         Returns the new window handle in ARGL (or 0xFF on size/handle limit).
+    .def .del_win, 0x03
+    ;   0x03: DEL_WIN - deletes the window specified by the handle in ARGL.
+    .def .blit_win, 0x04
+    ;   0x04: BLT_WIN - draws the compositor window to the master surface at X/Y.
+    .def .show, 0x05
+    ;   0x05: SCRN_SHOW - flips the display (pushes internal surface to host screen).
+    .def .fill, 0x06
+    ;   0x06: SCRN_FILL - fills the entire internal master surface with the Fill Color.
+    .def .set_fill_clr, 0x07
+    ;   0x07: SET_FILL_CLR - sets the master surface Fill Color to ARG (16-bit RGB565).
+    .def .set_blit_handle, 0x08
+    ;   0x08: SET_BLT_HNDL - sets the active compositor window handle to ARGL.
+    .def .set_blit_x, 0x09
+    ;   0x09: SET_BLIT_X - sets compositor X coordinate to ARG (Bit 15 is sign bit).
+    .def .set_blit_y, 0x0A
+    ;   0x0A: SET_BLIT_Y - sets compositor Y coordinate to ARG (Bit 15 is sign bit).
+
+; Status (bits):
+.scope stat_scr
+    .def .no_win, 0x01
+    ;   0: NO_WIN - set if no valid window is currently selected.
+
+; IRQ: Fired on host VBLANK to synchronize frame logic.
+
+
+; ____________________________ Unprivileged Ports _____________________________
+
+; BitBLT Engine Port
+.def port_blit, 0xFF10
+
+; State Configuration Commands (Instant, non-blocking):
+.scope cmd_blit
+    .def .loc, 0x01
+    ;   0x01: LOC - sets the source/destination RAM address to ARG.
+    .def .pos, 0x02
+    ;   0x02: POS - sets the internal window X (ARGL) and Y (ARGH) coordinates.
+    .def .size, 0x03
+    ;   0x03: SIZE - sets blit width (ARGL) and height (ARGH). 0 defaults to 256.
+    .def .stop, 0x05
+    ;   0x05: STOP - halts the current active hardware drawing operation.
+    .def .set_trans_clr, 0x0C
+    ;   0x0C: SET_TRANSPARENT_COLOR - sets the active window's transparent color index to ARG.
+    .def .set_color, 0x0D
+    ;   0x0D: SET_COLOR - sets the active window's primary color index to ARG.
+    .def .set_pxl, 0x0F
+    ;   0x0F: SET_PIXEL - set the active window's pixel at x,y to color.
+    .def .get_pxl, 0x10
+    ;   0x10: GET_PIXEL - get the active window's pixel at x,y to ARG.
+    .def .get_pxl_scr, 0x11
+    ;   0x10: GET_PIXEL_SCREEN - get the active window's pixel at x,y to ARG.
+
+; Hardware Execution Commands (Ticked/Asynchronous):
+; Note: These commands will be ignored if the ACTIVE status bit is high.
+.scope cmd_blit
+    .def .write_buf, 0x04
+    ;   0x04: WRITE_BUFFER - copies bytes from LOC in RAM to the window at POS/SIZE.
+    .def .show, 0x06
+    ;   0x06: SHOW_BUFFER - flags the window buffer as dirty/ready for compositor.
+    .def .fill_buf, 0x07
+    ;   0x07: FILL_BUFFER - fills POS/SIZE with the constant byte found at LOC in RAM.
+    .def .set_pal, 0x08
+    ;   0x08: SET_PALETTE - reads 256 16-bit colors from LOC in RAM to hardware palette.
+    .def .read_buf, 0x09
+    ;   0x09: READ_BUFFER - dumps the current window bounds to LOC in RAM.
+    .def .read_scr, 0x0A
+    ;   0x0A: READ_SCREEN - dumps the master screen output bounds to LOC in RAM.
+    .def .read_pal, 0x0B
+    ;   0x0B: READ_PALETTE - dumps the 256 hardware palette entries (16-bit) to LOC in RAM.
+    .def .cls, 0x0E
+    ;   0x0E: CLS - instantly clears the current window using the active COLOR register.
+
+; Status (bits):
+.scope stat_blit
+    .def .active, 0x01
+    ;   0: ACTIVE - hardware is currently processing a ticked operation.
+    .def .dirty, 0x02
+    ;   1: DIRTY - window contains uncommitted visual changes.
+
+; IRQ: Fired when an asynchronous execution command completes.
+
+
+; -----------------------------------------------------------------------------
+; Unified Input Port (Keyboard & Mouse)
+.def port_input, 0xFF14
+
+; Commands (Write to CMD/STAT):
+.scope cmd_input
+    .def .ack_err, 0xFE
+    ;   0xFE: ACK_ERR - clear the sticky keyboard overflow bit
+    .def .reset, 0xFF
+    ;   0xFF: RST - complete reset (clears KBD FIFO, mouse deltas, and overflow bit)
+
+; Status bits (Read from CMD/STAT):
+.scope stat_input
+    .def .kbd_avail, 0x01
+    ;   0: KBD_AVAIL - set if there is unread data in the keyboard FIFO
+    .def .kbd_overflow, 0x02
+    ;   1: KBD_OVERFLOW - sticky error bit set if the FIFO dropped a keystroke
+    .def .mouse_btn_right, 0x08
+    ;   3: BTN_RIGHT - right mouse button is currently pressed
+    .def .mouse_btn_middle, 0x10
+    ;   4: BTN_MIDDLE - middle mouse button is currently pressed
+    .def .mouse_btn_left, 0x20
+    ;   5: BTN_LEFT - left mouse button is currently pressed
+
+; Register Layout (Reads):
+;   [DATA] (Offset +1): Pops and returns the oldest byte from the keyboard FIFO.
+;   [ARGL] (Offset +2): Returns the accumulated X-Delta and immediately resets it to 0.
+;   [ARGH] (Offset +3): Returns the accumulated Y-Delta and immediately resets it to 0.

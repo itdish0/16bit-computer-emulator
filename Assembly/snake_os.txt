@@ -1,0 +1,753 @@
+.inc os_header.txt
+.inc graphics_lib_core.txt
+.inc port_constants.txt
+.def console, 0xFFF0
+
+.lbl _kernel_entry
+; BIOS set up the screen window for us already
+; Setup custom palette
+
+CALL populate_palette
+
+EI
+
+CALL bit_blt_wait
+CALL wait_vblank
+OUT (port_blit), cmd_blit_show
+OUT (port_scr), cmd_scr_blit_win
+OUT (port_scr), cmd_scr_show
+
+OUT (port_blit + reg.argl), 0xF8
+OUT (port_blit + reg.argh), 0x00
+OUT (port_blit), cmd_blit.set_trans_clr
+
+.lbl start_screen
+    LD c, 0
+    CALL fill_screen
+    
+    LD hl, start_str
+    LD de, 0x1050
+    LD bc, 0x3003
+    CALL print_str
+    
+    CALL wait_vblank
+    OUT (port_blit), cmd_blit_show
+    OUT (port_scr), cmd_scr_blit_win
+    OUT (port_scr), cmd_scr_show
+
+.lbl start_screen_wait
+    CALL random_num  ; So it's actually random
+    CALL wait_vblank
+    TSTIO (port_input), stat_input.kbd_avail
+    JR z, start_screen_wait
+
+LD c, 0
+CALL fill_screen
+CALL clear_kbd_buffer
+
+CALL spawn_apple
+
+.lbl cycle
+    CALL wait_vblank
+    .lbl .loop
+    LD hl, frame_counter
+    LD a, (hl)
+    INC a
+    LD (hl), a
+    INC hl
+    SUB a, (hl)
+    CP a, 4
+    JR c, cycle
+
+    ADD a, (hl)
+    LD (hl), a
+    CALL poll_input
+    LD a, (frame_counter)
+    RRA 2
+    AND a, 7
+    OR a, 0x48
+    LD c, a
+    LD a, (snake_dir)
+    LD b, a
+    RLA 4
+    OR a, c
+    LD c, a
+    
+    LD hl, snake.x
+    LD de, (hl)
+    CALL draw_snake
+    LD hl, snake.x
+    
+    LD a, b
+    CALL move_pointer
+
+    PUSH bc
+    
+    LD hl, snake.growth
+    LD a, (hl)
+    OR a, a
+    JR z, .tail
+        DEC (hl)
+        INC hl
+        JR .tail_end
+    .lbl .tail
+        LD hl, snake.tail_x
+        LD de, (hl)
+        CALL get_pxl
+        LD a, c
+        LD c, 0
+        CALL fill_tile
+        RRA 4
+        AND a, 3
+        LD hl, snake.tail_x
+        CALL move_pointer
+            
+    .lbl .tail_end    
+        LD hl, snake.x
+        LD de, (hl)
+        CALL get_pxl
+        LD a, c
+        CP a, 2
+        JR nz, .no_apple
+            PUSH de
+            CALL spawn_apple
+            LD hl, snake.growth
+            INC (hl)
+            INC hl
+            LD de, (hl)
+            INC de
+            LD (hl), de
+            POP de
+            JR .draw_head
+        .lbl .no_apple
+            AND a, 0xC0
+            CP a, 0x40
+            JR nz, .draw_head
+                JR game_over
+        .lbl .draw_head
+        POP bc
+        CALL draw_snake_head
+    
+        CALL cycle_palette
+        
+        CALL bit_blt_wait
+        CALL wait_vblank
+        OUT (port_blit), cmd_blit_show
+        OUT (port_scr), cmd_scr_blit_win
+        OUT (port_scr), cmd_scr_show
+    JP cycle.loop
+
+.lbl game_over
+    LD c, 0
+    CALL fill_screen
+    
+    LD hl, game_over_str
+    LD de, 0x1030
+    LD bc, 0x3002
+    CALL print_str
+    
+    LD hl, (snake.length)
+    CALL print_num
+    
+    CALL wait_vblank
+    OUT (port_blit), cmd_blit_show
+    OUT (port_scr), cmd_scr_blit_win
+    OUT (port_scr), cmd_scr_show
+    
+    CALL clear_kbd_buffer
+    ;CALL wait_input
+    JR -2
+
+STOP
+
+.str start_str, 'SNAKE!\nPRESS ANY KEY TO START'
+.str game_over_str, 'GAME OVER!\nYOU DIED!\n\nSCORE: '
+
+.def newline, 0x0A
+
+.def up, 0
+.def down, 1
+.def left, 2
+.def right, 3
+
+.def start_x, 16
+.def start_y, 16
+
+.scope snake
+    .byte .dir, right
+    .byte .x, start_x
+    .byte .y, start_y
+    .byte .tail_x, start_x
+    .byte .tail_y, start_y
+    .byte .growth, 5
+    .short .length, 5
+
+.scope apple
+    .byte .nutrients, 1
+    .byte .x, 0
+    .byte .y, 0
+
+.scope random
+    .byte .x, 0x42
+    .byte .c, 0x01
+
+.byte frame_counter, 0
+.byte frame_last, 0
+
+.short vblank_counter, 0x0000
+
+.byte bit_blt_done, 0
+
+.lbl _segfault_handler
+.lbl _stack_overflow_handler
+.lbl _illop_handler
+.lbl _inv_syscall_handler
+STOP
+.lbl _tick_handler
+.lbl _dma_complete_handler
+.lbl _disk_irq_handler
+RETI
+
+
+.lbl _bitblt_complete_handler
+    PUSH hl
+    LD hl, bit_blt_done
+    LD (hl), 1
+    POP hl
+    RETI
+
+.lbl _vblank_handler
+    PUSH hl
+    LD hl, vblank_counter
+    INC (hl)
+    JR nc, .skip
+        INC hl
+        INC (hl)
+    .lbl .skip
+    POP hl
+    RETI
+
+
+
+.lbl halt_bit_blt
+    LD hl, bit_blt_done
+    LD (hl), 0
+    XOR a, a
+    .lbl .wait
+        HALT
+        OR a, (hl)
+        JR z, .wait
+    RET
+
+.lbl spawn_apple
+    CALL random_num
+    RLA 3
+    AND a, -8
+    CP a, 192
+    JR nc, spawn_apple
+    LD c, a
+    CALL random_num
+    RLA 3
+    AND a, -8
+    LD e, a
+    LD d, c
+    CALL get_pxl
+    LD a, c
+    OR a, a
+    JR z, .found
+    .lbl .lin_scan
+        LD a, e
+        ADD a, 8
+        LD e, a
+        JR nc, .horiz
+            LD a, d
+            ADD a, 8
+            LD d, a
+            CP a, 192
+            JR c, .horiz
+                LD d, 0
+        .lbl .horiz
+        CALL get_pxl
+        LD a, c
+        OR a, a
+        JR nz, .lin_scan
+    .lbl .found
+    LD c, 2
+    CALL draw_apple
+    RET
+
+.lbl random_num
+    LD hl, (random.x)
+    LD e, h
+    LD d, 0
+    LD h, 182
+    MLT hl
+    OR a, a
+    ADC hl, de
+    LD (random.x), hl
+    LD a, l
+    RET
+
+.lbl move_pointer
+    TST a, 2
+    JR nz, .horiz
+        INC hl
+        TST a, 1
+        LD a, (hl)
+        JR z, .up
+            ADD a, 8
+            CP a, 191
+            JR c, .down_skip
+                LD a, 0
+            .lbl .down_skip
+            LD (hl), a
+            RET
+        .lbl .up
+            SUB a, 8
+            CP a, 191
+            JR c, .up_skip
+                LD a, 192-8
+            .lbl .up_skip
+            LD (hl), a
+            RET
+    .lbl .horiz
+        TST a, 1
+        LD a, (hl)
+        JR z, .left
+            ADD a, 8
+            LD (hl), a
+            RET
+        .lbl .left
+            SUB a, 8
+            LD (hl), a
+            RET
+
+.lbl get_pxl
+    LD hl, port_blit + reg_argl
+    LD (hl), de
+    OUT (port_blit), cmd_blit_pos
+    CALL bit_blt_wait
+    OUT (port_blit), cmd_blit_get_pxl
+    LD c, (hl)
+    RET
+
+.lbl set_pxl
+    LD hl, port_blit + reg_argl
+    LD (hl), de
+    OUT (port_blit), cmd_blit_pos
+    LD (hl), c
+    INC hl
+    LD (hl), 0x00
+    OUT (port_blit), cmd_blit_set_color
+    OUT (port_blit), cmd_blit_set_pxl
+    RET
+
+.lbl draw_apple
+    LD hl, port_blit + reg.argl
+    LD (hl), de
+    OUT (port_blit), cmd_blit_pos
+    OUT (port_blit + reg.argl), 8
+    OUT (port_blit + reg.argh), 8
+    OUT (port_blit), cmd_blit_size
+    LD de, snake_sprites.apple
+    LD (hl), de
+    OUT (port_blit), cmd_blit_loc
+    CALL bit_blt_wait
+    OUT (port_blit), cmd_blit_write_buf
+    RET
+.lbl draw_snake_head
+    LD hl, port_blit + reg.argl
+    LD (hl), de
+    OUT (port_blit), cmd_blit_pos
+    OUT (port_blit + reg.argl), 8
+    OUT (port_blit + reg.argh), 8
+    OUT (port_blit), cmd_blit_size
+    LD de, snake_sprites.buffer
+    LD (hl), de
+    OUT (port_blit), cmd_blit_loc
+
+    LD hl, snake_sprites.head
+    PUSH bc
+    CALL color_snake_sprite
+    POP bc
+
+    CALL bit_blt_wait
+    OUT (port_blit), cmd_blit_write_buf
+    RET 
+
+.lbl draw_snake
+.lbl draw_snake_body
+    LD hl, port_blit + reg.argl
+    LD (hl), de
+    OUT (port_blit), cmd_blit_pos
+    OUT (port_blit + reg.argl), 8
+    OUT (port_blit + reg.argh), 8
+    OUT (port_blit), cmd_blit_size
+    LD de, snake_sprites.buffer
+    LD (hl), de
+    OUT (port_blit), cmd_blit_loc
+
+    LD hl, snake_sprites.body
+    PUSH bc
+    CALL color_snake_sprite
+    POP bc
+
+    CALL bit_blt_wait
+    OUT (port_blit), cmd_blit_write_buf
+    RET 
+
+.lbl color_snake_sprite
+; IN: hl: sprite; c: color/dir phase
+    LD de, snake_sprites.buffer
+    LD b, 64
+    .lbl .loop
+        LD a, (hl)
+        LD (de), a
+        AND a, 0xC8
+        CP a, 0x48
+        JR nz, .loop_end
+            LD a, (hl)
+            ADD a, c
+            AND a, 0x7
+            OR a, 0x48
+            LD (de), a
+        .lbl .loop_end
+            INC hl
+            INC de
+            DJNZ .loop
+    LD de, snake_sprites_buffer
+    LD a, (de)
+    AND a, ~0x30
+    LD b, a
+    LD a, c
+    AND a, 0x30
+    OR a, b
+    LD (de), a
+    RET
+
+.lbl fill_screen
+    OUT (port_blit + reg.argl), 0
+    OUT (port_blit + reg.argh), 0
+    OUT (port_blit), cmd_blit_pos
+    OUT (port_blit + reg.argl), 0  ; Max size: 256
+    OUT (port_blit + reg.argh), 192
+    OUT (port_blit), cmd_blit_size
+    LD a, c
+    OUT (port_blit + reg.argl), a
+    OUT (port_blit + reg.argh), 0
+    OUT (port_blit), cmd_blit_set_color
+    CALL bit_blt_wait
+    OUT (port_blit), cmd_blit_fill_buf
+    JP halt_bit_blt
+
+.lbl fill_tile
+    LD hl, port_blit + reg.argl
+    LD (hl), de
+    OUT (port_blit), cmd_blit_pos
+    OUT (port_blit + reg.argl), 8
+    OUT (port_blit + reg.argh), 8
+    OUT (port_blit), cmd_blit_size
+    LD (hl), c
+    OUT (port_blit + reg.argh), 0
+    OUT (port_blit), cmd_blit_set_color
+    CALL bit_blt_wait
+    OUT (port_blit), cmd_blit_fill_buf
+    RET
+
+.lbl wait_input
+    TSTIO (port_input), stat_input.kbd_avail
+    JR z, wait_input
+
+.lbl clear_kbd_buffer
+    TSTIO (port_input), stat_input.kbd_avail
+    RET z
+    .lbl .loop
+        IN a, (port_input + reg.data)
+        TSTIO (port_input), stat_input.kbd_avail
+        JR nz, .loop
+    RET
+
+.lbl poll_input
+    LD hl, snake_dir
+
+    .lbl .loop
+    TSTIO (port_input), stat_input.kbd_avail
+    RET z
+
+    IN a, (port_input + reg.data)
+
+    DEC a
+    TST a, -4
+    JR nz, .loop
+
+    LD c, (hl)
+    LD b, a
+    XOR a, c
+    AND a, 2
+    JR z, .loop
+    LD (hl), b
+    RET
+
+.lbl wait_vblank
+    LD hl, vblank_counter
+    LD de, (hl)
+    OR a,a
+    .lbl .loop
+    HALT
+    LD bc, (hl)
+    EX hl, bc
+    SBC hl, de
+    EX hl, bc
+    JR z, .loop
+    RET
+
+.lbl populate_palette
+    ; Update palette and send it to the window.
+
+    ld hl, snake_palette.block
+    LD de, snake_palette.fill
+    LD bc, snake_palette.fill_size
+    LDIR
+
+    .lbl .internal
+    CALL bit_blt_wait
+    OUT (port_blit + reg_argl), 0
+    OUT (port_blit + reg_argh), 0
+    OUT (port_blit), cmd_blit_pos
+    OUT (port_blit), cmd_blit_size
+
+    OUT (port_blit + reg_argl), snake_palette & 0xFF
+    OUT (port_blit + reg_argh), snake_palette >> 8
+    
+    OUT (port_blit), cmd_blit_loc
+    OUT (port_blit), cmd_blit_set_pal
+    
+    RET
+
+.lbl cycle_palette_back
+
+    LD hl, snake_palette.block_cycle
+    LD c, (hl)
+    INC hl
+    LD b, (hl)
+    PUSH bc
+    LD d, h
+    LD e, l
+    DEC de
+    INC hl
+    LD bc, 14
+    LDIR
+    
+    POP bc
+    DEC hl
+    LD (hl), b
+    DEC hl
+    LD (hl), c
+    
+    JP populate_palette
+
+.lbl cycle_palette
+
+    LD hl, snake_palette.fill-1
+    LD b, (hl)
+    DEC hl
+    LD c, (hl)
+    PUSH bc
+    LD d, h
+    LD e, l
+    INC de
+    DEC hl
+    LD bc, 14
+    LDDR
+    
+    POP bc
+    INC hl
+    LD (hl), c
+    INC hl
+    LD (hl), b
+    
+    JP populate_palette
+
+.align 256
+.lbl _sp_min
+.ds 0x100
+.lbl _sp_start
+.align 256
+.lbl _kernel_end
+.ds 0x200
+
+.inc snake_sprites.txt
+.inc snake_palette.txt
+.inc font.txt
+
+.ds char_buffer, 64
+
+
+.lbl get_char_bmp   ; char a, color c
+    ld de, ascii_font
+    ld h, 0x00
+    ld l, a
+    OR a, a
+    ADC hl, hl
+    ADC hl, hl
+    ADC hl, hl
+    ADC hl, de
+    LD de, char_buffer
+    ; Get byte, unroll
+    LD b, 8
+.lbl line
+    LD a, (hl)
+    EX hl, de
+    PUSH bc
+    LD b, 8
+    .lbl unroll
+        RLA
+        JR nc, ur_skip
+            LD (hl), c
+            JP ur_done
+        .lbl ur_skip
+            LD (hl), 0x00
+        .lbl ur_done
+            INC hl
+            DJNZ unroll
+    POP bc
+    EX hl, de
+    INC hl
+    DJNZ line
+RET
+
+.lbl print_str   ; x,y d,e; str_ptr hl; color c; left lim b
+
+.lbl ps_loop
+.lbl .get_char
+    LD a, (hl)
+    OR a, a
+    JR z, ps_end
+    INC hl
+    CP a, 0x0A
+    JR z, carriage_return
+.lbl .get_font_bmp
+    PUSH hl
+    PUSH de
+    PUSH bc
+    CALL get_char_bmp
+    POP bc
+    POP de
+.lbl .bit_blt
+    CALL bit_blt_wait
+    OUT (port_blit + reg_argl), char_buffer & 0xFF
+    OUT (port_blit + reg_argh), char_buffer >> 8
+    OUT (port_blit), cmd_blit_loc
+    LD hl, port_blit + reg_argl
+    LD (hl), de
+    OUT (port_blit), cmd_blit_pos
+    OUT (port_blit + reg_argl), 0x08
+    OUT (port_blit + reg_argh), 0x08
+    OUT (port_blit), cmd_blit_size
+    OUT (port_blit), cmd_blit_write_buf
+.lbl .update_cursor
+    POP hl
+    LD a, e
+    ADD a, 0x06
+    LD e, a
+    ;LD a, 255
+    ;CP a, e
+    JR nc, ps_end_loop
+    .lbl carriage_return
+        LD e, b
+        LD a, d
+        ADD a, 8
+        LD d, a
+.lbl ps_end_loop
+    JR ps_loop
+.lbl ps_end
+    RET
+
+.lbl print_num  ; x,y d,e; num hl; color c; left lim b
+    PUSH de
+    PUSH bc
+    ; primitive but effective, I guess
+    LD de, num_string
+
+    LD bc, 10000
+    LD a, 0x2F
+    OR a, a
+    .lbl .ten_k
+        INC a  ; does not affect carry flag
+        SBC hl, bc
+        JR nc, .ten_k
+    OR a, a
+    ADC hl, bc
+    LD (de), a
+    INC de
+    
+    LD bc, 1000
+    LD a, 0x2F
+    OR a, a
+    .lbl .one_k
+        INC a  ; does not affect carry flag
+        SBC hl, bc
+        JR nc, .one_k
+    OR a, a
+    ADC hl, bc
+    LD (de), a
+    INC de
+    
+    LD bc, 100
+    LD a, 0x2F
+    OR a, a
+    .lbl .hundred
+        INC a  ; does not affect carry flag
+        SBC hl, bc
+        JR nc, .hundred
+    OR a, a
+    ADC hl, bc
+    LD (de), a
+    INC de
+    
+    LD bc, 10
+    LD a, 0x2F
+    OR a, a
+    .lbl .ten
+        INC a  ; does not affect carry flag
+        SBC hl, bc
+        JR nc, .ten
+    OR a, a
+    ADC hl, bc
+    LD (de), a
+    INC de
+    
+    LD bc, 1
+    LD a, 0x2F
+    OR a, a
+    .lbl .one
+        INC a  ; does not affect carry flag
+        SBC hl, bc
+        JR nc, .one
+    OR a, a
+    ADC hl, bc
+    LD (de), a
+    INC de
+    
+    LD hl, num_string
+    LD b, 4
+    .lbl .cut_loop
+        LD a, (hl)
+        CP a, 0x30
+        JR nz, .print
+        INC hl
+        DJNZ .cut_loop
+    
+    .lbl .print
+    
+    POP bc
+    POP de
+    
+    CALL print_str
+    RET
+
+.str num_string, "12345"
+
+
+.align 256
+.lbl _lib_end

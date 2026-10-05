@@ -1,0 +1,188 @@
+
+; Library Scratchpad
+
+.scope text_data
+    .def .cursor_x, 0x80
+    .def .cursor_y, 0x81
+    .def .color, 0x82
+    .def .background_color, 0x83
+    .def .transparent_color, 0x84
+    .def .flags, 0x85
+    .def .win_left,   0x87
+    .def .win_right,  0x88
+    .def .win_top,    0x89
+    .def .win_bottom, 0x8A
+    .def .char_buffer, 0xC0
+
+.inc font.txt
+.inc graphics_lib_core.txt
+
+.lbl clear_char_buffer
+; IN: color c
+; DESTROYS: bc, de, hl
+; OUT: none
+
+    LD hl, text_data.char_buffer
+    LD (hl), c
+    LD d, h
+    LD e, l
+    INC de
+    LD bc, 35
+    LDIR
+    RET
+
+.lbl get_char_bmp
+; IN: char a, color c
+; DESTROYS: a, b, de, hl
+; OUT: de=font+8*a+7, hl=char_buffer+34
+
+    ; set hl to ascii_font+8*a
+    ld h, 0
+    ld l, a
+    OR a, a
+    ADC hl, hl
+    ADC hl, hl
+    ADC hl, hl
+    ld de, ascii_font
+    ADC hl, de
+    LD de, text_data.char_buffer - 1
+    EX hl, de
+    ; Get byte, unroll
+    LD b, 7
+    .lbl .line
+        LD a, (de)
+        PUSH bc
+        LD b, 5
+        .lbl .unroll
+            INC hl
+            RLA
+            JR nc, .skip
+                LD (hl), c
+            .lbl .skip
+                DJNZ .unroll
+        POP bc
+        INC de
+        DJNZ .line
+    RET
+
+.lbl advance_cursor
+; IN: pos de
+; DESTROYS: 
+; OUT: none
+
+    LD hl, text_data.win_right
+    LD a, (hl)
+    CP a, d
+    JR c, .right_overflow
+        LD a, d
+        ADD a, 6
+        LD d, a
+        RET
+    .lbl .right_overflow
+        DEC hl
+        DEC hl
+        LD a, (hl)
+        TST a, 0x01
+        RET nz
+
+    RET
+
+.lbl carriage_return
+    LD e, b
+    LD a, d
+    ADD a, 8
+    LD d, a
+
+
+.lbl print_char
+; IN: char a
+; DESTROYS: a, b, de, hl
+; OUT: none
+
+CP a, 0x0A
+JR z, .carriage_return
+
+LD hl, text_data.cursor_x
+LD de, (hl)
+    
+
+
+
+INC hl
+INC hl
+LD c, (hl)
+
+OUT (port_blit + reg_argl), text_data.char_buffer & 0xFF
+OUT (port_blit + reg_argh), text_data.char_buffer >> 8
+OUT (port_blit), cmd_blit_loc
+
+OUT (port_blit + reg_argl), 0x08
+OUT (port_blit + reg_argh), 0x08
+OUT (port_blit), cmd_blit_size
+
+.lbl .internal
+; IN: char a, color c, loc de
+; DESTROYS: a, b, hl
+; OUT: none
+    PUSH de
+    CALL get_char_bmp
+    POP de
+    
+    CALL bit_blt_wait
+    
+    LD hl, port_blit + reg_argl
+    LD (hl), de
+    OUT (port_blit), cmd_blit_pos
+    
+    OUT (port_blit), cmd_blit_write_buf
+
+RET
+
+.lbl print_string
+; IN: ptr hl
+; DESTROYS: a, b, de, hl
+; OUT: none
+.lbl .loop
+.lbl .get_char
+    LD a, (hl)
+    OR a, a
+    JR z, ps_end
+    INC hl
+    CP a, 0x0A
+    JR z, carriage_return
+.lbl .get_font_bmp
+    PUSH hl
+    PUSH de
+    PUSH bc
+    CALL get_char_bmp
+    POP bc
+    POP de
+.lbl .bit_blt
+    CALL bit_blt_wait
+    OUT (port_blit + reg_argl), char_buffer & 0xFF
+    OUT (port_blit + reg_argh), char_buffer >> 8
+    OUT (port_blit), cmd_blit_loc
+    LD hl, port_blit + reg_argl
+    LD (hl), de
+    OUT (port_blit), cmd_blit_pos
+    OUT (port_blit + reg_argl), 0x08
+    OUT (port_blit + reg_argh), 0x08
+    OUT (port_blit), cmd_blit_size
+    OUT (port_blit), cmd_blit_write_buf
+.lbl .update_cursor
+    POP hl
+    LD a, e
+    ADD a, 0x06
+    LD e, a
+    ;LD a, 255
+    ;CP a, e
+    JR nc, ps_end_loop
+    .lbl carriage_return
+        LD e, b
+        LD a, d
+        ADD a, 8
+        LD d, a
+.lbl ps_end_loop
+    JR ps_loop
+.lbl ps_end
+    RET

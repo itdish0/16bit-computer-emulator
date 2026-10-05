@@ -1,0 +1,203 @@
+.inc os_header.txt
+.def console, 0xFFF0
+.def screen_ports, 0xFF0C
+.def disk_port, 0xFF04
+.def bit_blt, 0xFF10
+
+.lbl _kernel_entry
+EI
+LD hl, text
+LD b, 0x00
+LD c, console
+OTRZ
+OUT (console), newline
+OUT (console), 0x00
+
+OUT (screen_ports + 2), 0
+OUT (screen_ports + 3), 0
+OUT (screen_ports), 2
+IN a, (screen_ports + 2)
+LD (screen_handle), a
+OUT (screen_ports), 1
+OUT (screen_ports), 8
+
+OUT (bit_blt + 2), default_palette & 0xFF
+OUT (bit_blt + 3), default_palette >> 8
+
+OUT (bit_blt), 1
+OUT (bit_blt), 8
+
+CALL bit_blt_wait
+
+OUT (bit_blt), 6
+OUT (screen_ports), 4
+OUT (screen_ports), 5
+
+OUT (console+1), 0x01
+
+OUT (bit_blt + 2), 0
+OUT (bit_blt + 3), 0
+OUT (bit_blt), 3
+OUT (bit_blt), 7
+
+OUT (bit_blt + 2), 0x00
+OUT (bit_blt), 0x0C
+
+LD de, 0x1010
+PUSH de
+.lbl load_input
+
+    LD hl, text_buffer
+    LD b, 0x00
+    LD c, console + 1
+    INRZ
+
+    POP de
+    PUSH hl
+
+    LD bc, 0x100F
+    LD hl, text_buffer
+    CALL print_str
+
+    POP hl
+    PUSH de
+
+    DEC hl
+    LD a, (hl)
+    OR a, a
+    JR nz, load_input
+
+POP de
+
+CALL bit_blt_wait
+
+OUT (bit_blt), 6
+OUT (screen_ports), 4
+OUT (screen_ports), 5
+
+JR -2
+
+STOP
+.def newline, 0x0A
+
+.str text2, "Happy Birthday, Mom!"
+.txt text, "Type something, and it will be printed to the screen"
+.byte newline
+.str "Specifically type something in this console"
+.ds screen_handle, 1
+
+.lbl _segfault_handler
+.lbl _stack_overflow_handler
+.lbl _illop_handler
+.lbl _inv_syscall_handler
+.lbl _tick_handler
+.lbl _dma_complete_handler
+.lbl _disk_irq_handler
+.lbl _vblank_handler
+RETI
+.lbl _bitblt_complete_handler
+RETI
+
+.align 256
+.lbl _sp_min
+.ds 0x100
+.lbl _sp_start
+.align 256
+.lbl _kernel_end
+.ds 0x200
+
+.lbl get_char_bmp   ; char a, color c
+    ld de, ascii_font
+    ld h, 0x00
+    ld l, a
+    OR a, a
+    ADC hl, hl
+    ADC hl, hl
+    ADC hl, hl
+    ADC hl, de
+    LD de, char_buffer
+    ; Get byte, unroll
+    LD b, 8
+.lbl line
+    LD a, (hl)
+    EX hl, de
+    PUSH bc
+    LD b, 8
+    .lbl unroll
+        RLA
+        JR nc, ur_skip
+            LD (hl), c
+            JP ur_done
+        .lbl ur_skip
+            LD (hl), 0x00
+        .lbl ur_done
+            INC hl
+            DJNZ unroll
+    POP bc
+    EX hl, de
+    INC hl
+    DJNZ line
+RET
+
+.lbl print_str   ; x,y d,e; str_ptr hl; color c; left lim b
+
+.lbl ps_loop
+.lbl .get_char
+    LD a, (hl)
+    OR a, a
+    JR z, ps_end
+    INC hl
+    CP a, 0x0A
+    JR z, carriage_return
+.lbl .get_font_bmp
+    PUSH hl
+    PUSH de
+    PUSH bc
+    CALL get_char_bmp
+    POP bc
+    POP de
+.lbl .bit_blt
+CALL bit_blt_wait
+    OUT (bit_blt + 2), char_buffer & 0xFF
+    OUT (bit_blt + 3), char_buffer >> 8
+    OUT (bit_blt), 0x01
+    LD hl, bit_blt + 2
+    LD (hl), de
+    OUT (bit_blt), 0x02
+    OUT (bit_blt + 2), 0x08
+    OUT (bit_blt + 3), 0x08
+    OUT (bit_blt), 0x03
+    OUT (bit_blt), 0x04
+.lbl .update_cursor
+    POP hl
+    LD a, e
+    ADD a, 0x06
+    LD e, a
+    ;LD a, 255
+    ;CP a, e
+    JR nc, ps_end_loop
+    .lbl carriage_return
+        LD e, b
+        LD a, d
+        ADD a, 8
+        LD d, a
+.lbl ps_end_loop
+    JR ps_loop
+.lbl ps_end
+    RET
+
+.lbl bit_blt_wait
+TSTIO (bit_blt), 0x01
+JR nz, bit_blt_wait
+RET
+
+.lbl char_buffer
+.ds 64
+
+.inc palette.txt
+.inc font.txt
+
+.align 256
+.lbl _lib_end
+.ds text_buffer, 256
+.lbl text_buffer_end

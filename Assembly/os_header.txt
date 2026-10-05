@@ -1,0 +1,50 @@
+.txt "OS"
+.byte _lib_end >> 8
+.byte _kernel_end >> 8
+.byte _sp_start >> 8
+.byte _sp_min >> 8
+.short _kernel_entry
+.header
+; IVT (max 32 interrupt slots for now)
+.org 0x0000
+.short _segfault_handler
+.short _stack_overflow_handler
+.short _illop_handler
+.short _inv_syscall_handler
+.org 0x0008
+.short _tick_handler
+.short _dma_complete_handler
+.short _disk_irq_handler
+.short _vblank_handler
+.short _bitblt_complete_handler
+; interrupt data cache
+; format (8 bytes per):
+; 2 bytes: sp
+; 2 bytes: sp_min
+; 2 bytes: pc 
+; 1 byte: flags
+; 1 byte: metadata, i.e.
+;    bits 0-1: prev permission level
+;    more to come?
+.org 0x0040
+; faults (level 0)
+; interrupt anything else and save data here
+; double fault: complete shutdown
+.ds 8
+; IRQs (level 1)
+; interrupt level 3 always, 2 only if interrupts enabled
+; save data here (same format)
+.ds 8
+; Kernel, Syscalls (level 2)
+; interrupt level 3 only
+; if one is triggered while not in level 3, throw a fault
+; otherwise, same format
+.ds 8
+
+
+; SVT (sycall vector table)
+.org 0x0100
+; handle in a separate file starting with .org 0x0100
+; end SVT (max 128 syscalls)
+.org 0x0200
+; Actual kernel starts here

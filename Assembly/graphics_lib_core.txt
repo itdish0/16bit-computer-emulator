@@ -1,0 +1,4 @@
+.lbl bit_blt_wait
+TSTIO (port_blit), stat_blit_active
+JR nz, bit_blt_wait
+RET
