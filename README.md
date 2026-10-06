@@ -56,3 +56,7 @@ If you want to inspect or write assembly code for this system:
 - **Changelog & Architecture Notes:** Check `changelog.txt` for development history and internal updates.
 - **Graphics Assembly Routines:** See `Assembly/palette.txt`, `Assembly/font.txt`, and `Assembly/graphics_lib_core.txt` for default graphics setup and font printing.
 - **Assembly Bootloader/OS Template:** See `Assembly/bios.txt` and `Assembly/os_header.txt` for the beginnings of a simple bootloader/bios and os header contract.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
