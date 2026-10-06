@@ -27,8 +27,8 @@ Make sure you have Python installed, along with `pygame` and `numpy`:
 
 1. Clone the repository and navigate into the root directory:
     ```
-    git clone [https://github.com/itdish0/16bit-computer-emulator.git](https://github.com/itdish0/16bit-computer-emulator.git)
-    cd YOUR_REPOSITORY
+    git clone https://github.com/itdish0/16bit-computer-emulator.git
+    cd 16bit-computer-emulator
     ```
 2. Launch the emulator:
     ```
