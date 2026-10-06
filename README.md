@@ -6,7 +6,7 @@ A custom 16-bit computer architecture and emulator built in Python. Inspired by 
 
 ---
 
-## 📸 Overview & Features
+## Overview & Features
 
 - **eZ80-Inspired ISA:** Custom instruction set architecture handling 16-bit operations and port interfaces.
 - **Memory-Mapped I/O (MMIO):** Dedicated virtual hardware ports for file reading/writing and peripherals.
@@ -15,7 +15,7 @@ A custom 16-bit computer architecture and emulator built in Python. Inspired by 
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -38,7 +38,7 @@ Make sure you have Python installed, along with `pygame` and `numpy`:
 
 ---
 
-## 🎮 Available Programs / Demos
+## Available Programs / Demos
 
 | Executable | Description | Controls / Details |
 | :--- | :--- | :--- |
@@ -48,7 +48,7 @@ Make sure you have Python installed, along with `pygame` and `numpy`:
 
 ---
 
-## 🛠️ Assembly & Hardware Architecture
+## Assembly & Hardware Architecture
 
 If you want to inspect or write assembly code for this system:
 
